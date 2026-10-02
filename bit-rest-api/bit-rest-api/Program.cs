@@ -13,7 +13,7 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173") 
+        policy.WithOrigins("http://localhost:5173")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -32,21 +32,20 @@ app.UseHttpsRedirection();
 app.UseCors();
 app.MapHub<BitHub>("/bitHub");
 
-app.MapPost("/api/bus-arrivals", async (BusArrivalData[] arrivalData, IHubContext<BitHub> hubContext) =>
+app.MapPost("/api/bus-arrivals", async (StationArrivalResponse arrivalData, IHubContext<BitHub> hubContext) =>
 {
-    if (arrivalData == null || arrivalData.Length == 0)
+    if (arrivalData == null || arrivalData.BusList.Count == 0)
     {
         return Results.BadRequest("No arrival data provided.");
     }
 
-    var groupedByStation = arrivalData.GroupBy(d => d.StationId);
-    foreach (var group in groupedByStation)
-    {
-        await hubContext.Clients.Group($"{group.Key}")
-            .SendAsync("ReceiveBusArrivals", group.ToArray());
-    }
+    Console.WriteLine($"Received bus arrival data for station {arrivalData.StationId} at {arrivalData.UpdateTime}. Number of buses: {arrivalData.BusList.Count}");
 
-    return Results.Ok(new { ProcessedCount = arrivalData.Length });
+    await hubContext.Clients.Group($"{arrivalData.StationId}")
+        .SendAsync("ReceiveBusArrivals", arrivalData);
+
+
+    return Results.Ok(new { ProcessedCount = arrivalData.BusList.Count });
 });
 
 app.Run();
