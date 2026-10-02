@@ -21,12 +21,21 @@ app.UseHttpsRedirection();
 
 app.MapHub<BitHub>("/bitHub");
 
-app.MapPost("/api/bus-arrivals", async (BusArrivalData[] data, IHubContext<BitHub> hubContext) =>
+app.MapPost("/api/bus-arrivals", async (BusArrivalData[] arrivalData, IHubContext<BitHub> hubContext) =>
 {
-    await hubContext.Clients.Group($"{data[0].StationId}")
-        .SendAsync("ReceiveBusArrivals", data);
+    if (arrivalData == null || arrivalData.Length == 0)
+    {
+        return Results.BadRequest("No arrival data provided.");
+    }
 
-    return Results.Ok();
+    var groupedByStation = arrivalData.GroupBy(d => d.StationId);
+    foreach (var group in groupedByStation)
+    {
+        await hubContext.Clients.Group($"{group.Key}")
+            .SendAsync("ReceiveBusArrivals", group.ToArray());
+    }
+
+    return Results.Ok(new { ProcessedCount = arrivalData.Length });
 });
 
 app.Run();
