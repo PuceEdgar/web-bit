@@ -1,98 +1,155 @@
 import { useState, useEffect, useRef } from "react";
 import * as signalR from "@microsoft/signalr";
+import { domToPng } from "modern-screenshot";
 import "./App.css";
 
+interface StationData {
+  stationId: string;
+  stationName: string;
+  updateTime: any;
+  busList: BusArrivalData[];
+}
+
 interface BusArrivalData {
-  stationId: number;
-  stopName: string | null;
-  routeNumber: string | null;
-  destination: string | null;
-  remainingTime: number;
-  remainingStops: number;
+  routeId: string;
+  routeNo: string;
+  routeDirection: string;
+  currSttnName: string | null;
+  operationMode: number;
+  busType: number;
+  predictType: number;
+  remainStop: number;
+  remainTime: number;
 }
 
 function App() {
-  const STATION_ID = 105; // Hardcoded default station
+  const STATION_ID = 3399003; // Hardcoded default station
   const BACKEND_URL = "https://localhost:7113/bitHub"; // Update with your API URL
+  const RUST_WS_URL = "ws://127.0.0.1:3000/ws";
 
   const [connectionStatus, setConnectionStatus] =
     useState<string>("Disconnected");
-  const [arrivals, setArrivals] = useState<BusArrivalData[]>([]);
+  const [arrivals, setArrivals] = useState<StationData>();
   const [stationName, setStationName] = useState<string>(
     `Station ${STATION_ID}`,
   );
+  const [battery, setBattery] = useState<number | null>(null);
 
   const connectionRef = useRef<signalR.HubConnection | null>(null);
+  const rustWsRef = useRef<WebSocket | null>(null);
+  const displayRef = useRef<HTMLDivElement | null>(null);
+
+  // useEffect(() => {
+  //   function connectToDaemon() {
+  //     const ws = new WebSocket(RUST_WS_URL);
+  //     rustWsRef.current = ws;
+
+  //     ws.onmessage = (event) => {
+  //       try {
+  //         const telemetry = JSON.parse(event.data);
+  //         if (telemetry.battery !== undefined) {
+  //           setBattery(telemetry.battery); // Instant visual update when event fires
+  //         }
+  //       } catch (err) {
+  //         console.error("Failed parsing incoming telemetry packet:", err);
+  //       }
+  //     };
+
+  //     ws.onclose = () => {
+  //       console.warn(
+  //         "Daemon WS closed. Attempting reconnect event loop in 5 seconds...",
+  //       );
+  //       setTimeout(connectToDaemon, 5000);
+  //     };
+  //   }
+
+  //   connectToDaemon();
+  //   return () => rustWsRef.current?.close();
+  // }, []);
+
+  // useEffect(() => {
+  //   if (arrivals?.busList.length === 0 || !displayRef.current) return;
+
+  //   const timer = setTimeout(async () => {
+  //     try {
+  //       if (rustWsRef.current?.readyState === WebSocket.OPEN) {
+  //         const dataUrl = await domToPng(displayRef.current!, { quality: 1 });
+  //         const base64Data = dataUrl.split(",")[1]; // Get raw Base64 contents strictly
+
+  //         // Stream the data directly over the open channel socket
+  //         rustWsRef.current.send(
+  //           JSON.stringify({
+  //             station_id: STATION_ID,
+  //             image_base64: base64Data,
+  //           }),
+  //         );
+  //       }
+  //     } catch (err) {
+  //       console.error(
+  //         "Failed capturing or dispatching layout stream frame:",
+  //         err,
+  //       );
+  //     }
+  //   }, 300);
+
+  //   return () => clearTimeout(timer);
+  // }, [arrivals]);
 
   useEffect(() => {
-    // 2. Build the SignalR Connection with auto-reconnect
-    const connection = new signalR.HubConnectionBuilder()
-      .withUrl(BACKEND_URL)
-      .withAutomaticReconnect()
-      .configureLogging(signalR.LogLevel.Information)
-      .build();
+    if (!connectionRef.current) {
+      connectionRef.current = new signalR.HubConnectionBuilder()
+        .withUrl(BACKEND_URL)
+        .withAutomaticReconnect()
+        .build();
+    }
 
-    connectionRef.current = connection;
+    const connection = connectionRef.current;
 
-    // 3. Register Client-side listeners
-    connection.on("ReceiveBusArrivals", (data: BusArrivalData[]) => {
+    connection.on("ReceiveBusArrivals", (data: StationData) => {
       setArrivals(data);
-      // Capture the stop name if it's available in the payload
-      if (data.length > 0 && data[0].stopName) {
-        setStationName(data[0].stopName);
-      }
+      if (data.busList.length > 0 && data.stationName)
+        setStationName(data.stationName);
     });
 
-    connection.onreconnecting((error) => {
-      console.warn("SignalR reconnecting due to error:", error);
-      setConnectionStatus("Reconnecting");
-    });
-
-    connection.onreconnected(async (connectionId) => {
+    connection.onreconnected(async () => {
       setConnectionStatus("Connected");
-      console.log(`Reconnected with ID: ${connectionId}. Rejoining group...`);
-      try {
-        // Re-register to the station group after a server drop disconnect
-        await connection.invoke("JoinStation", STATION_ID.toString());
-      } catch (err) {
-        console.error("Failed to rejoin group on reconnect:", err);
-      }
+      await connection.invoke("JoinStation", STATION_ID.toString());
     });
 
-    connection.onclose((error) => {
-      console.error("SignalR connection closed permanently:", error);
-      setConnectionStatus("Disconnected");
-    });
-
-    // 4. Start Connection and Join Station Group
     async function startConnection() {
       try {
+        if (connection.state !== signalR.HubConnectionState.Disconnected) {
+          return;
+        }
+
         await connection.start();
         setConnectionStatus("Connected");
         await connection.invoke("JoinStation", STATION_ID.toString());
-        console.log(
-          `Successfully connected and joined group for station: ${STATION_ID}`,
-        );
-      } catch (err) {
-        console.error("SignalR Connection Error: ", err);
+      } catch {
         setConnectionStatus("Connection Failed");
-        // Retry connection setup after 5 seconds if backend is down on boot
         setTimeout(startConnection, 5000);
       }
     }
 
     startConnection();
-
-    // Clean up connections when component unmounts
     return () => {
-      if (connectionRef.current) {
-        connectionRef.current.stop();
+      if (
+        connection &&
+        connection.state === signalR.HubConnectionState.Connected
+      ) {
+        connection
+          .stop()
+          .then(() => {
+            connectionRef.current = null;
+          })
+          .catch((err) => console.error("Error stopping connection:", err));
       }
     };
   }, []);
 
   return (
     <div
+      ref={displayRef}
       style={{
         padding: "20px",
         fontFamily: "monospace",
@@ -111,45 +168,12 @@ function App() {
         }}
       >
         <h2>DEPARTURE BOARD: {stationName.toUpperCase()}</h2>
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: "12px",
-              height: "12px",
-              borderRadius: "50%",
-              backgroundColor:
-                connectionStatus === "Connected"
-                  ? "#4caf50"
-                  : connectionStatus === "Reconnecting"
-                    ? "#ffeb3b"
-                    : "#f44336",
-              marginRight: "8px",
-            }}
-          />
-          <span>Status: {connectionStatus}</span>
+        <div style={{ display: "flex", gap: "20px" }}>
+          {battery !== null && <span>⚡ Battery: {battery}%</span>}
+          <span>SignalR: {connectionStatus}</span>
         </div>
       </div>
 
-      {/* Network Disruption Alert Banner */}
-      {connectionStatus !== "Connected" && (
-        <div
-          style={{
-            backgroundColor: "#d32f2f",
-            color: "white",
-            padding: "15px",
-            textAlign: "center",
-            margin: "20px 0",
-            fontSize: "1.2rem",
-            fontWeight: "bold",
-          }}
-        >
-          ⚠️ Network connection lost. Attempting to restore updates
-          automatically...
-        </div>
-      )}
-
-      {/* Timetable Schedule Grid */}
       <table
         style={{
           width: "100%",
@@ -170,48 +194,32 @@ function App() {
           </tr>
         </thead>
         <tbody>
-          {arrivals.length === 0 ? (
-            <tr>
+          {arrivals?.busList.map((bus, idx) => (
+            <tr
+              key={idx}
+              style={{
+                borderBottom: "1px solid #222",
+                color: bus.remainTime <= 3 ? "#ff9800" : "#fff",
+              }}
+            >
+              <td style={{ padding: "16px", fontWeight: "bold" }}>
+                {bus.routeNo}
+              </td>
+              <td>{bus.routeDirection}</td>
+              <td style={{ textAlign: "right" }}>{bus.remainStop} stop(s)</td>
               <td
-                colSpan={4}
-                style={{ textAlign: "center", padding: "40px", color: "#666" }}
+                style={{
+                  textAlign: "right",
+                  paddingRight: "12px",
+                  fontWeight: "bold",
+                }}
               >
-                No active arrivals scheduled. Waiting for live updates...
+                {bus.remainTime <= 2
+                  ? "DUE"
+                  : `${Math.round(bus.remainTime / 60)} min`}
               </td>
             </tr>
-          ) : (
-            // Sort by remaining time ascending
-            [...arrivals]
-              .sort((a, b) => a.remainingTime - b.remainingTime)
-              .map((bus, idx) => (
-                <tr
-                  key={idx}
-                  style={{
-                    borderBottom: "1px solid #222",
-                    color: bus.remainingTime <= 3 ? "#ff9800" : "#fff",
-                  }}
-                >
-                  <td style={{ padding: "16px", fontWeight: "bold" }}>
-                    {bus.routeNumber}
-                  </td>
-                  <td>{bus.destination}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {bus.remainingStops} stop(s)
-                  </td>
-                  <td
-                    style={{
-                      textAlign: "right",
-                      paddingRight: "12px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    {bus.remainingTime <= 2
-                      ? "DUE"
-                      : `${bus.remainingTime} min`}
-                  </td>
-                </tr>
-              ))
-          )}
+          ))}
         </tbody>
       </table>
     </div>
