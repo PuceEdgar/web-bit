@@ -9,6 +9,17 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddSignalR();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("http://localhost:5173") 
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -18,7 +29,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseCors();
 app.MapHub<BitHub>("/bitHub");
 
 app.MapPost("/api/bus-arrivals", async (BusArrivalData[] arrivalData, IHubContext<BitHub> hubContext) =>
