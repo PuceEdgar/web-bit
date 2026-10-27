@@ -1,5 +1,5 @@
 :root {
-  --bit-border: #222222;
+  --bit-border: #000000;
   --bit-bg: #ffffff;
   --bit-text: #000000;
 }
@@ -7,7 +7,7 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #f0f2f5;
+  background-color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--bit-text);
 }
@@ -36,6 +36,7 @@ body {
 .bit-title-area {
   display: flex;
   align-items: baseline;
+  flex-direction: column;
   gap: 20px;
 }
 
@@ -48,7 +49,7 @@ body {
 .bit-city-en {
   font-size: 28px;
   font-weight: 600;
-  color: #444;
+  color: #000000;
 }
 
 .bit-station-id {
@@ -100,7 +101,7 @@ body {
 }
 
 .bit-table td {
-  border-bottom: 2px solid #dddddd;
+  border-bottom: 2px solid #000000;
   padding: 32px 8px;
   vertical-align: middle;
 }
@@ -137,7 +138,7 @@ body {
 
 .route-desc {
   font-size: 24px;
-  color: #555;
+  color: #000000;
   margin-top: 6px;
   white-space: nowrap;
   overflow: hidden;
@@ -181,7 +182,7 @@ body {
   align-items: center;
   position: relative;
   height: 54px;
-  border: 2px solid #999999;
+  border: 2px solid #000000;
   background-color: #ffffff;
 }
 
@@ -192,9 +193,10 @@ body {
   top: 0;
   bottom: 0;
   width: 0;
-  border-left: 18px solid #000;
+  border-right: 18px solid #000;
   border-top: 25px solid transparent;
   border-bottom: 25px solid transparent;
+  margin-left: -20px;
 }
 
 .track-segment {
@@ -202,7 +204,7 @@ body {
   text-align: center;
   font-size: 24px;
   font-weight: 700;
-  border-right: 2px solid #dddddd;
+  border-right: 2px solid #000000;
   line-height: 50px;
 }
 
@@ -230,20 +232,18 @@ body {
   font-size: 24px;
   font-weight: 700;
   text-align: left;
-  color: #333;
+  color: #000000;
 }
 
 /* Footer Section */
 .bit-footer {
   margin-top: auto; /* Pushes the ad section completely to the bottom edge */
-  border-top: 3px dashed #666;
-  padding-top: 36px;
+  border-top: 3px dashed #000000;
+  padding-top: 20px;
 }
 
 .footer-ad {
-  border: 2px solid #aaaaaa;
-  padding: 32px;
-  background-color: #fafafa;
+  padding: 32px;  
   font-size: 28px;
   text-align: left;
 }

@@ -1,4 +1,5 @@
 using BITRestAPI.DTOs;
+using BITRestAPI.GwacheonAPI;
 using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,13 +8,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.Services.AddHttpClient("GwacheonClient");
+builder.Services.AddSingleton<IGwacheonStationManager, GwacheonStationManager>();
 builder.Services.AddSignalR();
 
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:5174", "http://192.168.17.220:5174", "http://192.168.17.220:5174", "http://172.17.160.1:5174" , "http://192.168.17.223:5174")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -28,7 +31,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseCors();
 app.MapHub<BitHub>("/bitHub");
 

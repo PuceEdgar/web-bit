@@ -40,6 +40,7 @@ function App() {
   const connectionRef = useRef<signalR.HubConnection | null>(null);
   const rustWsRef = useRef<WebSocket | null>(null);
   const displayRef = useRef<HTMLDivElement | null>(null);
+  const [currentTime, setCurrentTime] = useState<string>("");
 
   // useEffect(() => {
   //   function connectToDaemon() {
@@ -96,6 +97,40 @@ function App() {
 
   //   return () => clearTimeout(timer);
   // }, [arrivals]);
+
+useEffect(() => {
+  const formatKoreanDateTime = () => {
+    const now = new Date();
+    
+    const year = now.getFullYear();
+    // Pad months and days with a leading zero if single digit
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    
+    let hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    
+    // Determine Korean meridiem indicator (오전 / 오후)
+    const ampm = hours >= 12 ? "오후" : "오전";
+    
+    // Convert 24h clock to standard 12h display formats
+    hours = hours % 12;
+    hours = hours ? hours : 12; // The hour '0' should be '12'
+    const formattedHours = String(hours).padStart(2, '0');
+
+    return `${year}년 ${month}월 ${day}일 ${ampm} ${formattedHours}:${minutes}`;
+  };
+
+  // Set the initial date and time immediately on layout mount
+  setCurrentTime(formatKoreanDateTime());
+
+  // Setup interval loop tracking exactly at the top of every minute frame transition
+  const interval = setInterval(() => {
+    setCurrentTime(formatKoreanDateTime());
+  }, 60000);
+
+  return () => clearInterval(interval);
+}, []);
 
   useEffect(() => {
     if (!connectionRef.current) {
@@ -185,16 +220,16 @@ function App() {
         <div className="track-visual">
           {totalSegments.map((segmentIndex:any) => {
             // Highlighting active index block corresponding to inverted step marker
-            const isBusHere = remainStop === (6 - segmentIndex);
-            const isIncomingEdge = segmentIndex === 5 && remainStop <= 1;
+            const isBusHere = remainStop === segmentIndex || (segmentIndex === 5 && remainStop > 5)
+            const isIncomingEdge = segmentIndex === 5 && remainStop > 5;
 
             return (
               <div 
                 key={segmentIndex} 
                 className={`track-segment ${isBusHere ? 'bus-here' : ''} ${isIncomingEdge ? 'bus-incoming' : ''}`}
               >
-                {isBusHere ? (6 - segmentIndex) : (segmentIndex === 4 && remainStop > 4 ? '**' : segmentIndex)}
-                {isIncomingEdge && !isBusHere && <span className="track-bus-icon">🚌</span>}
+                {isBusHere ? segmentIndex : (segmentIndex === 4 && remainStop > 5 ? '**' : (segmentIndex === 5 && remainStop > 5 ? remainStop : segmentIndex))}
+                {isIncomingEdge && <span className="track-bus-icon">🚌</span>}
               </div>
             );
           })}
@@ -290,13 +325,14 @@ function App() {
         <div className="bit-title-area">
           <span className="bit-city">공주 특례시</span>
           <span className="bit-city-en">GONGJU CITY</span>
-          <span className="bit-station-id">정류장 ID {TARGET_STATION}</span>
+          
         </div>
+        <span className="bit-station-id">정류장 ID {TARGET_STATION}</span>
         <div className="bit-station-name">{stationName}</div>
       </div>
 
       <div className="bit-meta">
-        <div>2026년 06월 08일 오전 11:36</div>
+        <div>{currentTime}</div>
         <div style={{ display: "flex", gap: "10px", fontSize: "11px", color: "#666" }}>
           {battery !== null && <span>🔋 {battery}%</span>}
           <span>SignalR: {connectionStatus}</span>
@@ -336,7 +372,7 @@ function App() {
             ))
           ) : (
             <tr>
-              <td colSpan={4} style={{ padding: "40px 0", color: "#666", fontWeight: "bold" }}>
+              <td colSpan={4} style={{ padding: "40px 0", color: "#666", fontWeight: "bold", fontSize: "60px" }}>
                 현재 운행 중인 버스가 없습니다.
               </td>
             </tr>
