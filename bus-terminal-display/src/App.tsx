@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import * as signalR from "@microsoft/signalr";
+import { useParams } from "react-router-dom";
 import { domToPng } from "modern-screenshot";
 import "./App.css";
 
@@ -23,15 +24,16 @@ interface BusArrivalData {
 }
 
 function App() {
-  const STATION_ID = 3399003; // Hardcoded default station
-  const BACKEND_URL = "https://localhost:7113/bitHub"; // Update with your API URL
+  const { stationId } = useParams<{ stationId: string }>();
+  const TARGET_STATION = stationId || "3399003"; // Hardcoded default station
+  const BACKEND_URL = "http://192.168.17.220:5191/bitHub"; // Update with your API URL
   const RUST_WS_URL = "ws://127.0.0.1:3000/ws";
 
   const [connectionStatus, setConnectionStatus] =
     useState<string>("Disconnected");
   const [arrivals, setArrivals] = useState<StationData>();
   const [stationName, setStationName] = useState<string>(
-    `Station ${STATION_ID}`,
+    `Station ${TARGET_STATION}`,
   );
   const [battery, setBattery] = useState<number | null>(null);
 
@@ -99,7 +101,7 @@ function App() {
     if (!connectionRef.current) {
       connectionRef.current = new signalR.HubConnectionBuilder()
         .withUrl(BACKEND_URL)
-        .withAutomaticReconnect()
+        .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
         .build();
     }
 
@@ -107,14 +109,32 @@ function App() {
 
     connection.on("ReceiveBusArrivals", (data: StationData) => {
       setArrivals(data);
+      console.log(data)
       if (data.busList.length > 0 && data.stationName)
         setStationName(data.stationName);
     });
 
+     // 1. Triggered IMMEDIATELY when the server goes offline or network drops
+  connection.onreconnecting((error) => {
+    console.warn("SignalR connection lost. Attempting automatic reconnection:", error);
+    setConnectionStatus("Reconnecting / Server Offline");
+  });
+
+  // 2. Triggered when a dropped connection successfully hooks back up
     connection.onreconnected(async () => {
       setConnectionStatus("Connected");
-      await connection.invoke("JoinStation", STATION_ID.toString());
+      await connection.invoke("JoinStation", TARGET_STATION);
     });
+
+    // 3. Triggered if all automatic retry attempts in your array fail completely
+  connection.onclose((error) => {
+    console.error("SignalR connection died permanently:", error);
+    setConnectionStatus("Disconnected");
+    
+    // Optional fallback: Manually trigger a fresh restart cycle after your 30s array fails
+    setTimeout(startConnection, 5000); 
+  });
+
 
     async function startConnection() {
       try {
@@ -124,7 +144,7 @@ function App() {
 
         await connection.start();
         setConnectionStatus("Connected");
-        await connection.invoke("JoinStation", STATION_ID.toString());
+        await connection.invoke("JoinStation", TARGET_STATION);
       } catch {
         setConnectionStatus("Connection Failed");
         setTimeout(startConnection, 5000);
@@ -133,6 +153,8 @@ function App() {
 
     startConnection();
     return () => {
+
+      connection.off("ReceiveBusArrivals");
       if (
         connection &&
         connection.state === signalR.HubConnectionState.Connected
@@ -145,85 +167,197 @@ function App() {
           .catch((err) => console.error("Error stopping connection:", err));
       }
     };
-  }, []);
+  }, [TARGET_STATION]);
 
-  return (
-    <div
-      ref={displayRef}
-      style={{
-        padding: "20px",
-        fontFamily: "monospace",
-        backgroundColor: "#121212",
-        color: "#fff",
-        minHeight: "100vh",
-      }}
-    >
-      {/* Top Banner Status Bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          borderBottom: "2px solid #333",
-          paddingBottom: "10px",
-        }}
-      >
-        <h2>DEPARTURE BOARD: {stationName.toUpperCase()}</h2>
-        <div style={{ display: "flex", gap: "20px" }}>
-          {battery !== null && <span>⚡ Battery: {battery}%</span>}
+   // Utility to handle localized ETA strings matching the image patterns
+  const formatEta = (remainTime: number) => {
+    const mins = Math.round(remainTime / 60);
+    if (mins <= 2) return <span className="eta-due">잠시후</span>;
+    return <span className="eta-time">{mins}분</span>;
+  };
+
+  // Renders the precise step track visualization blocks based on remaining stops
+  const renderProgressTrack = (remainStop: number, currentStation: string | null) => {
+    const totalSegments:any = [1, 2, 3, 4 ,5];
+    
+    return (
+      <div className="track-container">
+        <div className="track-visual">
+          {totalSegments.map((segmentIndex:any) => {
+            // Highlighting active index block corresponding to inverted step marker
+            const isBusHere = remainStop === (6 - segmentIndex);
+            const isIncomingEdge = segmentIndex === 5 && remainStop <= 1;
+
+            return (
+              <div 
+                key={segmentIndex} 
+                className={`track-segment ${isBusHere ? 'bus-here' : ''} ${isIncomingEdge ? 'bus-incoming' : ''}`}
+              >
+                {isBusHere ? (6 - segmentIndex) : (segmentIndex === 4 && remainStop > 4 ? '**' : segmentIndex)}
+                {isIncomingEdge && !isBusHere && <span className="track-bus-icon">🚌</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="track-current-location">
+          현재: {currentStation || "정보 없음"}
+        </div>
+      </div>
+    );
+  };
+
+  // return (
+  //   <div
+  //     ref={displayRef}
+  //     style={{
+  //       padding: "20px",
+  //       fontFamily: "monospace",
+  //       backgroundColor: "#121212",
+  //       color: "#fff",
+  //       minHeight: "100vh",
+  //     }}
+  //   >
+  //     {/* Top Banner Status Bar */}
+  //     <div
+  //       style={{
+  //         display: "flex",
+  //         justifyContent: "space-between",
+  //         borderBottom: "2px solid #333",
+  //         paddingBottom: "10px",
+  //       }}
+  //     >
+  //       <h2>DEPARTURE BOARD: {stationName.toUpperCase()}</h2>
+  //       <div style={{ display: "flex", gap: "20px" }}>
+  //         {battery !== null && <span>⚡ Battery: {battery}%</span>}
+  //         <span>SignalR: {connectionStatus}</span>
+  //       </div>
+  //     </div>
+
+  //     <table
+  //       style={{
+  //         width: "100%",
+  //         textAlign: "left",
+  //         marginTop: "20px",
+  //         fontSize: "1.4rem",
+  //         borderCollapse: "collapse",
+  //       }}
+  //     >
+  //       <thead>
+  //         <tr style={{ color: "#aaa", borderBottom: "1px solid #444" }}>
+  //           <th style={{ padding: "12px" }}>ROUTE</th>
+  //           <th>DESTINATION</th>
+  //           <th style={{ textAlign: "right" }}>STOPS AWAY</th>
+  //           <th style={{ textAlign: "right", paddingRight: "12px" }}>
+  //             ARRIVING
+  //           </th>
+  //         </tr>
+  //       </thead>
+  //       <tbody>
+  //         {arrivals?.busList.map((bus, idx) => (
+  //           <tr
+  //             key={idx}
+  //             style={{
+  //               borderBottom: "1px solid #222",
+  //               color: bus.remainTime <= 3 ? "#ff9800" : "#fff",
+  //             }}
+  //           >
+  //             <td style={{ padding: "16px", fontWeight: "bold" }}>
+  //               {bus.routeNo}
+  //             </td>
+  //             <td>{bus.routeDirection}</td>
+  //             <td style={{ textAlign: "right" }}>{bus.remainStop} stop(s)</td>
+  //             <td
+  //               style={{
+  //                 textAlign: "right",
+  //                 paddingRight: "12px",
+  //                 fontWeight: "bold",
+  //               }}
+  //             >
+  //               {bus.remainTime <= 2
+  //                 ? "DUE"
+  //                 : `${Math.round(bus.remainTime / 60)} min`}
+  //             </td>
+  //           </tr>
+  //         ))}
+  //       </tbody>
+  //     </table>
+  //   </div>
+  // );
+   return (
+    <div ref={displayRef} className="bit-container">
+      {/* Kiosk Display Top Header info lines */}
+      <div className="bit-header">
+        <div className="bit-title-area">
+          <span className="bit-city">공주 특례시</span>
+          <span className="bit-city-en">GONGJU CITY</span>
+          <span className="bit-station-id">정류장 ID {TARGET_STATION}</span>
+        </div>
+        <div className="bit-station-name">{stationName}</div>
+      </div>
+
+      <div className="bit-meta">
+        <div>2026년 06월 08일 오전 11:36</div>
+        <div style={{ display: "flex", gap: "10px", fontSize: "11px", color: "#666" }}>
+          {battery !== null && <span>🔋 {battery}%</span>}
           <span>SignalR: {connectionStatus}</span>
         </div>
       </div>
 
-      <table
-        style={{
-          width: "100%",
-          textAlign: "left",
-          marginTop: "20px",
-          fontSize: "1.4rem",
-          borderCollapse: "collapse",
-        }}
-      >
+      {/* Marquee ticker bar updates */}
+      <div className="bit-alert-bar">
+        잠시 후 도착 : 
+      </div>
+
+      {/* Structured Display Table Layout */}
+      <table className="bit-table">
         <thead>
-          <tr style={{ color: "#aaa", borderBottom: "1px solid #444" }}>
-            <th style={{ padding: "12px" }}>ROUTE</th>
-            <th>DESTINATION</th>
-            <th style={{ textAlign: "right" }}>STOPS AWAY</th>
-            <th style={{ textAlign: "right", paddingRight: "12px" }}>
-              ARRIVING
-            </th>
+          <tr>
+            <th style={{ textAlign: "center" }}>노선번호</th>
+            <th style={{ textAlign: "center" }}>예정</th>
+            <th style={{ textAlign: "center" }}>좌석</th>
+            <th style={{ width: "650px" }}>현재 버스 위치</th>
           </tr>
         </thead>
         <tbody>
-          {arrivals?.busList.map((bus, idx) => (
-            <tr
-              key={idx}
-              style={{
-                borderBottom: "1px solid #222",
-                color: bus.remainTime <= 3 ? "#ff9800" : "#fff",
-              }}
-            >
-              <td style={{ padding: "16px", fontWeight: "bold" }}>
-                {bus.routeNo}
-              </td>
-              <td>{bus.routeDirection}</td>
-              <td style={{ textAlign: "right" }}>{bus.remainStop} stop(s)</td>
-              <td
-                style={{
-                  textAlign: "right",
-                  paddingRight: "12px",
-                  fontWeight: "bold",
-                }}
-              >
-                {bus.remainTime <= 2
-                  ? "DUE"
-                  : `${Math.round(bus.remainTime / 60)} min`}
+          {arrivals?.busList && arrivals.busList.length > 0 ? (
+            arrivals.busList.map((bus, idx) => (
+              <tr key={idx}>
+                <td className="route-cell">
+                  <div className="route-badge">일반</div>
+                  <div className="route-number">{bus.routeNo}</div>
+                  <div className="route-desc">{bus.routeDirection}</div>
+                </td>
+                <td>{formatEta(bus.remainTime)}</td>
+                <td className="seat-status">여유</td>
+                <td className="track-cell">
+                  {renderProgressTrack(bus.remainStop, bus.currSttnName)}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={4} style={{ padding: "40px 0", color: "#666", fontWeight: "bold" }}>
+                현재 운행 중인 버스가 없습니다.
               </td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
+
+      {/* Public information announcement footer panels matching design */}
+      <div className="bit-footer">
+        <div className="footer-ad">
+          <div className="ad-title">공주시 정신건강복지센터 (☎ 041-852-1094)</div>
+          <ul className="ad-list">
+            <li>정신건강 상담 및 교육</li>
+            <li>치료비, 심리상담 지원</li>
+            <li>위기·자살 예방 상담</li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
+
 }
 
 export default App;
