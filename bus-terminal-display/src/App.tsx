@@ -42,61 +42,60 @@ function App() {
   const displayRef = useRef<HTMLDivElement | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
 
-  // useEffect(() => {
-  //   function connectToDaemon() {
-  //     const ws = new WebSocket(RUST_WS_URL);
-  //     rustWsRef.current = ws;
+  useEffect(() => {
+    function connectToDaemon() {
+      const ws = new WebSocket(RUST_WS_URL);
+      rustWsRef.current = ws;
 
-  //     ws.onmessage = (event) => {
-  //       try {
-  //         const telemetry = JSON.parse(event.data);
-  //         if (telemetry.battery !== undefined) {
-  //           setBattery(telemetry.battery); // Instant visual update when event fires
-  //         }
-  //       } catch (err) {
-  //         console.error("Failed parsing incoming telemetry packet:", err);
-  //       }
-  //     };
+      ws.onmessage = (event) => {
+        try {
+          const telemetry = JSON.parse(event.data);
+          if (telemetry.battery !== undefined) {
+            setBattery(telemetry.battery); // Instant visual update when event fires
+          }
+        } catch (err) {
+          console.error("Failed parsing incoming telemetry packet:", err);
+        }
+      };
 
-  //     ws.onclose = () => {
-  //       console.warn(
-  //         "Daemon WS closed. Attempting reconnect event loop in 5 seconds...",
-  //       );
-  //       setTimeout(connectToDaemon, 5000);
-  //     };
-  //   }
+      ws.onclose = () => {
+        console.warn(
+          "Daemon WS closed. Attempting reconnect event loop in 5 seconds...",
+        );
+        setTimeout(connectToDaemon, 5000);
+      };
+    }
 
-  //   connectToDaemon();
-  //   return () => rustWsRef.current?.close();
-  // }, []);
+    connectToDaemon();
+    return () => rustWsRef.current?.close();
+  }, []);
 
-  // useEffect(() => {
-  //   if (arrivals?.busList.length === 0 || !displayRef.current) return;
+  useEffect(() => {
+    if (arrivals?.busList?.length === 0 || !displayRef.current) return;
 
-  //   const timer = setTimeout(async () => {
-  //     try {
-  //       if (rustWsRef.current?.readyState === WebSocket.OPEN) {
-  //         const dataUrl = await domToPng(displayRef.current!, { quality: 1 });
-  //         const base64Data = dataUrl.split(",")[1]; // Get raw Base64 contents strictly
+    const timer = setTimeout(async () => {
+      try {
+        if (rustWsRef.current?.readyState === WebSocket.OPEN) {
+          const dataUrl = await domToPng(displayRef.current!, { quality: 1 });
+          const base64Data = dataUrl.split(",")[1]; // Get raw Base64 contents strictly         
+          // Stream the data directly over the open channel socket
+          rustWsRef.current.send(
+            JSON.stringify({
+              station_id: TARGET_STATION,
+              image_base64: base64Data,
+            }),
+          );
+        }
+      } catch (err) {
+        console.error(
+          "Failed capturing or dispatching layout stream frame:",
+          err,
+        );
+      }
+    }, 300);
 
-  //         // Stream the data directly over the open channel socket
-  //         rustWsRef.current.send(
-  //           JSON.stringify({
-  //             station_id: STATION_ID,
-  //             image_base64: base64Data,
-  //           }),
-  //         );
-  //       }
-  //     } catch (err) {
-  //       console.error(
-  //         "Failed capturing or dispatching layout stream frame:",
-  //         err,
-  //       );
-  //     }
-  //   }, 300);
-
-  //   return () => clearTimeout(timer);
-  // }, [arrivals]);
+    return () => clearTimeout(timer);
+  }, [arrivals]);
 
 useEffect(() => {
   const formatKoreanDateTime = () => {
