@@ -23,10 +23,71 @@ interface BusArrivalData {
   remainTime: number;
 }
 
+const speakTTS = (arriveBuses: (string | undefined)[]) => {
+     let message: string = "";
+
+    for (const bus of arriveBuses) {
+        // 1. Check for null, undefined, or empty/whitespace string
+        if (!bus || bus.trim() === "") {
+            continue;
+        }
+
+        let bisNo: string = bus;
+
+        // 2. Replace English letters (using global regex /g or replaceAll)
+        bisNo = bisNo.replace(/M/g, "엠, ");
+        bisNo = bisNo.replace(/A/g, "에이, ");
+        bisNo = bisNo.replace(/B/g, "비, ");
+        bisNo = bisNo.replace(/C/g, "씨, ");
+        bisNo = bisNo.replace(/G/g, "지, ");
+
+        // 3. Change dash-number spelling
+        bisNo = bisNo.replace(/-1/g, "다시.일, ");
+        bisNo = bisNo.replace(/-2/g, "다시.이, ");
+        bisNo = bisNo.replace(/-3/g, "다시.삼, ");
+        bisNo = bisNo.replace(/-4/g, "다시.사, ");
+        bisNo = bisNo.replace(/-5/g, "다시.오, ");
+        bisNo = bisNo.replace(/-6/g, "다시.육, ");
+        bisNo = bisNo.replace(/-7/g, "다시.칠, ");
+        bisNo = bisNo.replace(/-8/g, "다시.팔, ");
+        bisNo = bisNo.replace(/-9/g, "다시.구, ");
+        bisNo = bisNo.replace(/-0/g, "다시.영, ");
+
+        // 4. Append to message using a template literal (equivalent to string.Format)
+        message += `${bisNo}, 번, `;
+    }
+
+    message += "버스가 곧 도착 합니다, ,";
+
+
+    console.log(`SPEAK MESSAGE: ${message}`)
+    const utterance = new SpeechSynthesisUtterance(message);
+    const voices = window.speechSynthesis.getVoices();
+const targetLang = "ko-kr";
+     const selectedVoice = voices.filter(voice => voice.lang === targetLang && voice.localService === false);
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice[1];
+        console.log(`SELECTED VOICE: ${selectedVoice[1].name}`)
+    } else {
+        console.warn(`Voice for ${targetLang} not found. Using system default.`);
+    }
+    
+    try
+    {
+      console.log(utterance)
+      window.speechSynthesis.speak(utterance);
+    }
+    catch {
+        console.error("TTS FAILED!!!");
+    }
+    
+}
+
 function App() {
   const { stationId } = useParams<{ stationId: string }>();
   const TARGET_STATION = stationId || "3399003"; // Hardcoded default station
-  const BACKEND_URL = "http://192.168.17.220:5191/bitHub"; // Update with your API URL
+  const BACKEND_URL = "http://192.168.17.205:5191/bitHub"; // Update with your API URL
   const RUST_WS_URL = "ws://127.0.0.1:3000/ws";
 
   const [connectionStatus, setConnectionStatus] =
@@ -42,33 +103,34 @@ function App() {
   const displayRef = useRef<HTMLDivElement | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
 
-  useEffect(() => {
-    function connectToDaemon() {
-      const ws = new WebSocket(RUST_WS_URL);
-      rustWsRef.current = ws;
+  //uncomment later to send print screen to epd
+  // useEffect(() => {
+  //   function connectToDaemon() {
+  //     const ws = new WebSocket(RUST_WS_URL);
+  //     rustWsRef.current = ws;
 
-      ws.onmessage = (event) => {
-        try {
-          const telemetry = JSON.parse(event.data);
-          if (telemetry.battery !== undefined) {
-            setBattery(telemetry.battery); // Instant visual update when event fires
-          }
-        } catch (err) {
-          console.error("Failed parsing incoming telemetry packet:", err);
-        }
-      };
+  //     ws.onmessage = (event) => {
+  //       try {
+  //         const telemetry = JSON.parse(event.data);
+  //         if (telemetry.battery !== undefined) {
+  //           setBattery(telemetry.battery); // Instant visual update when event fires
+  //         }
+  //       } catch (err) {
+  //         console.error("Failed parsing incoming telemetry packet:", err);
+  //       }
+  //     };
 
-      ws.onclose = () => {
-        console.warn(
-          "Daemon WS closed. Attempting reconnect event loop in 5 seconds...",
-        );
-        setTimeout(connectToDaemon, 5000);
-      };
-    }
+  //     ws.onclose = () => {
+  //       console.warn(
+  //         "Daemon WS closed. Attempting reconnect event loop in 5 seconds...",
+  //       );
+  //       setTimeout(connectToDaemon, 5000);
+  //     };
+  //   }
 
-    connectToDaemon();
-    return () => rustWsRef.current?.close();
-  }, []);
+  //   connectToDaemon();
+  //   return () => rustWsRef.current?.close();
+  // }, []);
 
   useEffect(() => {
     if (arrivals?.busList?.length === 0 || !displayRef.current) return;
@@ -240,83 +302,22 @@ useEffect(() => {
     );
   };
 
-  // return (
-  //   <div
-  //     ref={displayRef}
-  //     style={{
-  //       padding: "20px",
-  //       fontFamily: "monospace",
-  //       backgroundColor: "#121212",
-  //       color: "#fff",
-  //       minHeight: "100vh",
-  //     }}
-  //   >
-  //     {/* Top Banner Status Bar */}
-  //     <div
-  //       style={{
-  //         display: "flex",
-  //         justifyContent: "space-between",
-  //         borderBottom: "2px solid #333",
-  //         paddingBottom: "10px",
-  //       }}
-  //     >
-  //       <h2>DEPARTURE BOARD: {stationName.toUpperCase()}</h2>
-  //       <div style={{ display: "flex", gap: "20px" }}>
-  //         {battery !== null && <span>⚡ Battery: {battery}%</span>}
-  //         <span>SignalR: {connectionStatus}</span>
-  //       </div>
-  //     </div>
+const checkArriveSoon = () => {
+  const arriveSoon = arrivals?.busList?.map((bd, idx) => {
+  if (bd.remainTime < 520) {
+    return bd.routeNo;
+  } 
+});
 
-  //     <table
-  //       style={{
-  //         width: "100%",
-  //         textAlign: "left",
-  //         marginTop: "20px",
-  //         fontSize: "1.4rem",
-  //         borderCollapse: "collapse",
-  //       }}
-  //     >
-  //       <thead>
-  //         <tr style={{ color: "#aaa", borderBottom: "1px solid #444" }}>
-  //           <th style={{ padding: "12px" }}>ROUTE</th>
-  //           <th>DESTINATION</th>
-  //           <th style={{ textAlign: "right" }}>STOPS AWAY</th>
-  //           <th style={{ textAlign: "right", paddingRight: "12px" }}>
-  //             ARRIVING
-  //           </th>
-  //         </tr>
-  //       </thead>
-  //       <tbody>
-  //         {arrivals?.busList.map((bus, idx) => (
-  //           <tr
-  //             key={idx}
-  //             style={{
-  //               borderBottom: "1px solid #222",
-  //               color: bus.remainTime <= 3 ? "#ff9800" : "#fff",
-  //             }}
-  //           >
-  //             <td style={{ padding: "16px", fontWeight: "bold" }}>
-  //               {bus.routeNo}
-  //             </td>
-  //             <td>{bus.routeDirection}</td>
-  //             <td style={{ textAlign: "right" }}>{bus.remainStop} stop(s)</td>
-  //             <td
-  //               style={{
-  //                 textAlign: "right",
-  //                 paddingRight: "12px",
-  //                 fontWeight: "bold",
-  //               }}
-  //             >
-  //               {bus.remainTime <= 2
-  //                 ? "DUE"
-  //                 : `${Math.round(bus.remainTime / 60)} min`}
-  //             </td>
-  //           </tr>
-  //         ))}
-  //       </tbody>
-  //     </table>
-  //   </div>
-  // );
+  if(arriveSoon) {
+    speakTTS(arriveSoon);
+
+    return (
+      <span>{arriveSoon.join(' ')}</span>
+    )
+  }
+}
+
    return (
     <div ref={displayRef} className="bit-container">
       {/* Kiosk Display Top Header info lines */}
@@ -340,7 +341,8 @@ useEffect(() => {
 
       {/* Marquee ticker bar updates */}
       <div className="bit-alert-bar">
-        잠시 후 도착 : 
+        
+        잠시 후 도착 : <span>{checkArriveSoon()}</span>
       </div>
 
       {/* Structured Display Table Layout */}
